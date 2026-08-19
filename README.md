@@ -1,91 +1,183 @@
 # actions-orchestrator
 
-[![Built with Ona](https://ona.com/build-with-ona.svg)](https://app.ona.com/#https://github.com/Interested-Deving-1896/actions-orchestrator) [![KDE Eco](https://img.shields.io/badge/KDE%20Eco-certified-brightgreen?logo=kde&logoColor=white&style=flat-square)](https://eco.kde.org/) [![Blue Angel](https://img.shields.io/badge/Blue%20Angel-DE--UZ%20215-0055a4?style=flat-square)](https://www.blauer-engel.de/en/certification/criteria) [![Energy](https://api.green-coding.io/v1/ci/badge/get?repo=Interested-Deving-1896%2Factions-orchestrator&branch=main&workflow=eco-audit.yml)](https://metrics.green-coding.io/ci-index.html)
+[![Lint](https://github.com/fjaeckel/actions-orchestrator/actions/workflows/lint.yml/badge.svg)](https://github.com/fjaeckel/actions-orchestrator/actions/workflows/lint.yml)
 
+Run multiple GitHub Actions self-hosted runners on a single machine — one runner per repository. Designed for private GitHub accounts where runners can't be shared across repos.
 
-<!-- AI:start:what-it-does -->
-_Description pending._
-<!-- AI:end:what-it-does -->
+## How it works
 
-## Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Orchestrator                                               │
+│                                                             │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
+│  │ Runner #1    │  │ Runner #2    │  │ Runner #3    │ ...   │
+│  │ owner/repo-a │  │ owner/repo-b │  │ owner/repo-c │       │
+│  │ (pid 1234)   │  │ (pid 1235)   │  │ (pid 1236)   │       │
+│  └──────────────┘  └──────────────┘  └──────────────┘       │
+│                                                             │
+│  Health monitor thread — auto-restarts crashed runners      │
+└─────────────────────────────────────────────────────────────┘
+```
 
-<!-- AI:start:architecture -->
-_Architecture documentation pending._
-<!-- AI:end:architecture -->
+Each runner:
+- Lives in its own directory (`runners/<owner>-<repo>/`)
+- Is registered independently with one GitHub repository
+- Runs as its own process with isolated work directories
+- Is monitored and auto-restarted if it crashes
 
-## Install
+## Quick start
 
-<!-- Add installation instructions here. This section is yours — the AI will not modify it. -->
+### 1. Clone & install
 
 ```bash
-git clone https://github.com/Interested-Deving-1896/actions-orchestrator.git
+git clone git@github.com:fjaeckel/actions-orchestrator.git
 cd actions-orchestrator
+make bootstrap
 ```
 
-## Usage
+### 2. Configure
 
-<!-- Add usage examples here. This section is yours — the AI will not modify it. -->
-
-## Configuration
-
-<!-- Document configuration options here. This section is yours — the AI will not modify it. -->
-
-## CI
-
-<!-- AI:start:ci -->
-_CI documentation pending._
-<!-- AI:end:ci -->
-
-## Mirror chain
-
-<!-- AI:start:mirror-chain -->
-This repo is maintained in [`Interested-Deving-1896/actions-orchestrator`](https://github.com/Interested-Deving-1896/actions-orchestrator) and mirrored through:
-
-```
-Interested-Deving-1896/actions-orchestrator  ──►  OpenOS-Project-OSP/actions-orchestrator  ──►  OpenOS-Project-Ecosystem-OOC/actions-orchestrator
+```bash
+cp config.yaml.example config.yaml
 ```
 
-Changes flow downstream automatically via the hourly mirror chain in
-[`fork-sync-all`](https://github.com/Interested-Deving-1896/fork-sync-all).
-Direct commits to OSP or OOC are detected and opened as PRs back to `Interested-Deving-1896`.
-<!-- AI:end:mirror-chain -->
+Edit `config.yaml`:
 
-## Contributors
+```yaml
+github_pat: "ghp_your_personal_access_token"
+runners_base: "./runners"
 
-<!-- AI:start:contributors -->
-_Contributors pending._
-<!-- AI:end:contributors -->
+repositories:
+  - owner: "your-username"
+    repo: "repo-one"
+  - owner: "your-username"
+    repo: "repo-two"
+    labels:
+      - "docker"
+```
 
-## Origins
+The PAT needs the **`repo`** scope (classic token) or **Administration read/write** permission (fine-grained token) for each repository.
 
-<!-- AI:start:origins -->
-_Original project — no upstream influences recorded._
-<!-- AI:end:origins -->
+Alternatively, set `GITHUB_PAT` as an environment variable or in a `.env` file.
 
-## Resources
+### 3. Run
 
-<!-- AI:start:resources -->
-_No additional resource files found._
-<!-- AI:end:resources -->
+```bash
+# Setup only (download runner binary, configure all repos):
+make setup
 
-## Accessibility
+# Start all runners + health monitor (foreground, Ctrl+C to stop):
+make start
+```
 
-<!-- AI:start:accessibility -->
-This repo uses automated accessibility auditing via `check-accessibility.yml`.
+## CLI commands
 
-Checks include: CODEOWNERS ownership coverage, README screen-reader compatibility,
-WCAG 2.1 AA HTML compliance, audio overview (espeak-ng), and Braille output (liblouis).
+| Command | Description |
+|----------------|----------------------------------------------|
+| `setup` | Download runner binary, provision & configure |
+| `start` | Start all runners + health monitor (blocks) |
+| `stop` | Stop all running runner processes |
+| `status` | Query GitHub API for registered runner status |
+| `unregister` | Deregister all runners from GitHub |
+| `destroy` | Unregister + delete all runner directories |
 
+All commands accept `-c <path>` to specify a config file (default: `config.yaml`).
 
+```bash
+make start CONFIG=production.yaml
+```
 
+## Directory layout
 
-Run the [Check Accessibility](https://github.com/Interested-Deving-1896/actions-orchestrator/actions/workflows/check-accessibility.yml)
-workflow to generate the first report and accessibility artifacts.
-See [DOCS/accessibility.md](https://github.com/Interested-Deving-1896/actions-orchestrator/blob/main/DOCS/accessibility.md) for the full reference.
-<!-- AI:end:accessibility -->
+```
+actions-orchestrator/
+├── config.yaml.example     # Example configuration
+├── config.yaml             # Your configuration (gitignored)
+├── Makefile                 # Convenience targets
+├── requirements.txt        # Python dependencies
+├── scripts/
+│   └── download-runner.sh  # Downloads GitHub Actions runner binary
+├── orchestrator/
+│   ├── __init__.py
+│   ├── __main__.py         # python -m orchestrator entry point
+│   ├── cli.py              # Argument parsing & subcommands
+│   ├── config.py           # Configuration loading
+│   ├── github_api.py       # GitHub API (registration tokens, etc.)
+│   ├── orchestrator.py     # Fleet management & health monitoring
+│   └── runner.py           # Single runner instance lifecycle
+├── _runner_template/       # Downloaded runner binary (gitignored)
+└── runners/                # Per-repo runner directories (gitignored)
+    ├── you-repo-one/
+    │   ├── run.sh
+    │   ├── config.sh
+    │   ├── _work/
+    │   └── ...
+    └── you-repo-two/
+        └── ...
+```
+
+## Configuration reference
+
+### config.yaml
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `github_pat` | string | — | GitHub PAT with `repo` scope |
+| `runner_version` | string | `""` (latest) | Specific runner version to download |
+| `runners_base` | string | `./runners` | Base directory for runner instances |
+| `default_labels` | list | `[]` | Labels applied to all runners |
+| `runner_group` | string | `""` | Runner group (Enterprise/org only) |
+| `health_check_interval` | int | `30` | Seconds between health checks |
+| `log_level` | string | `INFO` | Logging level |
+| `log_file` | string | `./orchestrator.log` | Log file path |
+| `repositories` | list | — | List of repos (see below) |
+
+### Repository entry
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `owner` | string | — | GitHub user/org |
+| `repo` | string | — | Repository name |
+| `labels` | list | `[]` | Extra labels for this runner |
+| `pat` | string | `null` | Per-repo PAT override |
+
+### Environment variables
+
+| Variable | Overrides |
+|---|---|
+| `GITHUB_PAT` | `github_pat` in config |
+| `RUNNERS_BASE` | `runners_base` in config |
+| `LOG_LEVEL` | `log_level` in config |
+
+## How runner registration works
+
+1. The orchestrator calls the GitHub API to get a short-lived **registration token** for each repository
+2. It runs the official `config.sh` with `--unattended` to register the runner
+3. It starts `run.sh` as a background process
+4. A health monitor thread checks every N seconds and auto-restarts crashed runners
+5. On `SIGINT` / `SIGTERM`, runners are gracefully stopped via `SIGINT` → `SIGKILL` fallback
+
+## Cleaning up
+
+```bash
+# Stop runners and deregister from GitHub:
+make unregister
+
+# Nuclear option — deregister + delete all runner files:
+make destroy
+
+# Remove downloaded runner binary + logs:
+make clean
+```
+
+## Requirements
+
+- Python 3.10+
+- macOS (arm64/x64) or Linux (x64/arm64)
+- GitHub PAT with `repo` scope
+- Network access to github.com
 
 ## License
 
-<!-- AI:start:license -->
-[MIT](https://github.com/Interested-Deving-1896/actions-orchestrator/blob/main/LICENSE) © 2026 [Interested-Deving-1896](https://github.com/Interested-Deving-1896)
-<!-- AI:end:license -->
+MIT
